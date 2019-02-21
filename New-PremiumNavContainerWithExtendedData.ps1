@@ -54,7 +54,7 @@ function Switch-NavContainerToPremiumMode {
     Import-ObjectsToNavContainer -containerName $containerName -objectsFile $fobfile -sqlCredential $sqlCredential
     Start-Sleep -Seconds 5
     Invoke-NavContainerCodeunit -containerName $containerName -tenant $tenant -CodeunitId 60000 -MethodName SetPremiumExperience
-    Write-Host -ForegroundColor green "Business Center UI is switched to Premium mode"
+    Write-Host -ForegroundColor green "Business Central UI is switched to Premium mode"
 }
 
 function ImportAndApply-ConfigPackageInNavContainer {
@@ -140,7 +140,7 @@ $navdockerimage = 'mcr.microsoft.com/businesscentral/sandbox:ca'
 $username = 'admin'
 $password = ConvertTo-SecureString "admin" -AsPlainText -Force
 $credential = New-Object System.Management.Automation.PSCredential ($username, $password)
-
+$licenseFile = 'C:\ProgramData\NavContainerHelper\License\license.flf'
 
 New-PremiumNavContainerWithExtendedData -accept_eula:$accept_eula `
                     -containername $containername `
