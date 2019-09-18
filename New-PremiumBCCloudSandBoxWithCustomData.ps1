@@ -25,7 +25,7 @@ function New-PremiumBCCloudSandBoxWithCustomData {
     # Connect to admin Center
     $authHeaderDA = GetAuthHeader -DAemail $DAemail -DApassword $DApassword -tenantdomain $tenantdomain -appId $appId
 
-    Write-Host $authHeaderDA
+    New-BCCloudSandBox -url $url -authHeaderDA $authHeaderDA -sandboxName $sandboxName -nextVersion:$true
 
     $Elapsed = (Get-Date)-$startTime;
 
@@ -93,6 +93,195 @@ function GetAuthHeader
     }    
 } 
 
+function Get-BCCloudEnvironments {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA,
+        $envName
+    )
+
+    $req = $url +  '/v1.2/admin/applications/BusinessCentral/environments/' + $envName
+    $result = Invoke-WebRequest `
+                                -Uri   $req `
+                                -Headers @{Authorization=$authHeaderDA} `
+                                -Method Get 
+
+    $result.Content   
+}
+
+
+function Get-BCCloudAvailableVersions{
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA
+    )
+
+    $req = $url +  '/v1.2/admin/applications/BusinessCentral/rings/'
+    $result = Invoke-WebRequest `
+                                -Uri   $req `
+                                -Headers @{Authorization=$authHeaderDA} `
+                                -Method Get 
+
+    $result.Content
+}
+
+
+function Get-BCCloudAvailablePreviewVersion{
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA
+    )
+
+    $supportedVersions = Get-BCCloudAvailableVersions -url $url -authHeaderDA $authHeaderDA | ConvertFrom-Json
+    $appVersion = $supportedVersions.value | where { $_.ringFriendlyName -eq "Preview" } | Select -ExpandProperty "applicationVersion"
+    $major = $appVersion.major
+    $minor = $appVersion.minor
+    $build = $appVersion.build
+    $revision = $appVersion.revision
+     
+    return ("$major.$minor.$build.$revision")
+<#  
+    #There where problems in API when appVersion returned in flat format 
+    $major = $appVersion |
+    Select-String '(?<=major=)\d+' |
+    Select-Object -Expand Matches |
+    Select-Object -Expand Value
+
+    $minor =$appVersion |
+    Select-String '(?<=minor=)\d+' |
+    Select-Object -Expand Matches |
+    Select-Object -Expand Value
+
+    $build = $appVersion |
+    Select-String '(?<=build=)\d+' |
+    Select-Object -Expand Matches |
+    Select-Object -Expand Value
+
+    $revision = $appVersion |
+    Select-String '(?<=revision=)\d+' |
+    Select-Object -Expand Matches |
+    Select-Object -Expand Value
+
+    return ("$major.$minor.$build.$revision") 
+#>
+}
+
+function New-BCCloudSandBox {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA,
+        [Parameter(Mandatory=$true)]
+        [string] $sandboxName,
+        [switch] $nextVersion
+    )
+
+    if (! $nextVersion) {
+        $req = $url +  "/v1.2/admin/applications/BusinessCentral/environments/$sandboxName"
+    } else {
+        $appVersion = Get-BCCloudAvailablePreviewVersion -url $url -authHeaderDA $authHeaderDA
+        $req = $url +  "/v1.2/admin/applications/BusinessCentral/environments/$sandboxName/$appVersion/PREVIEW"
+    }
+
+    Write-Host "Creating new Sandbox..."          
+
+    $JSON = @'
+    {
+        "type": "Sandbox"
+    }
+'@
+
+     try {
+       $result = Invoke-WebRequest `
+            -Uri   $req `
+            -Headers @{Authorization=$authHeaderDA} `
+            -Method PUT `
+            -Body $JSON -ContentType "application/json"
+    } catch {
+        $status = $_.Exception.Response.StatusCode.value__
+    }
+
+    $sandboxStatus = Get-BCCloudSandBoxStatus -url $url -authHeaderDA $authHeaderDA -sandboxName $sandboxName
+    
+    if (($status -eq '400') -and ($sandboxStatus -ne "Preparing"))
+    {
+        Write-Host -ForegroundColor Red "Sandbox already exists"
+        return
+    }
+    
+    # Wait until Sandbox is ready
+    Wait-BCCloudSandBoxReady -url $url -authHeaderDA $authHeaderDA -sandboxName $sandboxName
+ 
+}
+
+function Get-BCCloudSandBoxStatus {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA,
+        [Parameter(Mandatory=$true)]
+        [string] $sandboxName
+    )
+    
+    try{
+        $result = Get-BCCloudEnvironments -url $url -authHeaderDA $authHeaderDA -envName $sandboxName
+        if ($result) {$currStatus = $result  | ConvertFrom-Json |select status}
+        return ($currStatus.status)
+    } catch {
+        $currStatus = $_.Exception.Response.StatusCode
+        return ($currStatus)
+    }    
+}
+
+function Wait-BCCloudSandBoxReady {
+    param (
+        [Parameter(Mandatory=$true)]
+        [string] $url,
+        [Parameter(Mandatory=$true)]
+        $authHeaderDA,
+        [Parameter(Mandatory=$true)]
+        [string] $sandboxName
+    )
+
+    $status = Get-BCCloudSandBoxStatus -url $url -authHeaderDA $authHeaderDA -sandboxName $sandboxName
+    if ($status -eq "NotFound")
+    {
+        Write-Host -ForegroundColor Red "Sandbox is not found"
+        return
+    } 
+    if ($status -eq "Removing")
+    {
+        Write-Host -ForegroundColor Yellow "Sandbox is removing"
+        return
+    }
+    if ($status -eq "Unauthorized")
+    {
+        return
+    }
+    while (($status -ne "Active") -and ($status -ne "NotFound"))
+    {
+        $wait = 30
+        $status = Get-BCCloudSandBoxStatus -url $url -authHeaderDA $authHeaderDA -sandboxName $sandboxName
+        if (($status -ne "Active") -and ($status -ne "NotFound"))
+        {
+            Write-Host -ForegroundColor Yellow "Sandbox is cooking. Current status is" $status ". Next try in $wait sec"
+            Start-Sleep -Seconds $wait    
+        }
+    }
+    
+    Write-Host -ForegroundColor Green "Sandbox is " $status            
+    
+}
+
+
 # --------------------------------------Prerequisites-------------------------------------
 
 Install-Package Azure -Force
@@ -105,7 +294,7 @@ $appId = "581e2ea2-008e-44e9-8ec0-9e5d40540b27" #">>YOUR APP ID<<"
 $DAemail = "admin.prem@airappsbctestus.onmicrosoft.com"
 $DApassword = ''
 $tenantdomain = "airappsbctestus.onmicrosoft.com"
-$sandboxName = 'Sandbox-AirApps'
+$sandboxName = 'Sandbox-Wave2'
 $companyName = 'AirApps'
 
 # --------------------------------------Main Function-------------------------------------
