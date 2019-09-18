@@ -290,11 +290,11 @@ Install-Module AzureAD -Force
 # --------------------------------------Initialize-------------------------------------
 
 $url ='https://api.businesscentral.dynamics.com'
-$appId = "581e2ea2-008e-44e9-8ec0-9e5d40540b27" #">>YOUR APP ID<<"
+$appId = "" #">>YOUR APP ID<<"
 $DAemail = "admin.prem@airappsbctestus.onmicrosoft.com"
 $DApassword = ''
 $tenantdomain = "airappsbctestus.onmicrosoft.com"
-$sandboxName = 'Sandbox-Wave2'
+$sandboxName = 'My-Wave2-Sandbox'
 $companyName = 'AirApps'
 
 # --------------------------------------Main Function-------------------------------------
