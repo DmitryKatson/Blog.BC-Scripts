@@ -49,11 +49,8 @@ function Switch-NavContainerToPremiumMode {
         [System.Management.Automation.PSCredential]$sqlCredential = $null
     )
 
-    $fobfile = Join-Path $env:TEMP "SetPremiumExperience.fob"
-    Download-File -sourceUrl "http://bit.ly/bcsetpremiumexpfob" -destinationFile $fobfile
-    Import-ObjectsToNavContainer -containerName $containerName -objectsFile $fobfile -sqlCredential $sqlCredential
-    Start-Sleep -Seconds 5
-    Invoke-NavContainerCodeunit -containerName $containerName -tenant $tenant -CodeunitId 60000 -MethodName SetPremiumExperience
+    $CronusCompany = Get-CompanyInNavContainer -containerName $containerName | Where { $_.CompanyName -like ‘CRONUS*’ -and $_.EvaluationCompany -eq "true"} | Select-Object -First 1
+    Invoke-NavContainerCodeunit -containerName $containerName -tenant $tenant -CompanyName $CronusCompany.CompanyName -Codeunitid 9179 -MethodName SaveExperienceTierCurrentCompany -Argument Premium
     Write-Host -ForegroundColor green "Business Central UI is switched to Premium mode"
 }
 
